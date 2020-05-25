@@ -1,0 +1,12 @@
+[Unit]
+Description=Scheduler for garden lights
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+ExecStart=/usr/local/bin/lights
+
+[Install]
+Alias=lights.service
+WantedBy=multi-user.target
