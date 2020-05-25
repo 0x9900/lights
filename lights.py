@@ -17,9 +17,12 @@ logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%H:%M:%S',
                     level=logging.DEBUG)
 
-SLEEP_TIME = 60
+SLEEP_TIME = 53
 LOCAL_TZ = 'America/Los_Angeles'
 PORTS = [9, 11, 0, 5, 6, 13, 19, 26]
+
+LATITUDE = 37.4591
+LONGITUDE = -122.2474
 
 def conv_to_set(obj):
   """Converts to set allowing single integer to be provided"""
@@ -31,10 +34,15 @@ def conv_to_set(obj):
 
 
 class Sunset(object):
+  __cache = {}
+
   def __init__(self):
-    self._sun = {}
-    lat, lng = (37.4591, -122.2474)
+    lat, lng = (LATITUDE, LONGITUDE)
     now = datetime.now()
+
+    if now.date() in Sunset.__cache:
+      self._sun = self.__cache[now.date()]
+      return
 
     params = dict(lat=lat, lng=lng, formatted=0,
                   date=now.strftime('%Y-%m-%d'))
@@ -47,11 +55,15 @@ class Sunset(object):
       raise
 
     tzone = pytz.timezone(LOCAL_TZ)
+    self._sun = {}
     for key, val in data['results'].items():
       if key == 'day_length':
         self._sun[key] = val
       else:
         self._sun[key] = datetime.fromisoformat(val).astimezone(tzone)
+
+    Sunset.__cache[now.date()] = self._sun
+    return
 
   @property
   def sunset(self):
@@ -144,7 +156,7 @@ class CronTab(object):
     """Run the cron forever"""
     self._check()
     while True:
-      gevent.sleep(60)
+      gevent.sleep(SLEEP_TIME)
       garbage = [t for t in self.events if isinstance(t, Task) and t.has_run]
       for task in garbage:
         self.delete(task)
@@ -171,6 +183,7 @@ class Lights(object):
     self._start_time = start_time
     self._stop_time = stop_time
 
+    gpio.setwarnings(False)
     gpio.setmode(gpio.BCM)
     for port in self._ports:
       gpio.setup(port, gpio.OUT)
@@ -237,7 +250,7 @@ def task():
 
 def add_sunset_task(cron=None, lights=None):
   sun = Sunset()
-  logging.debug('Sunset at: %s', sun.sunset.isoformat())
+  logging.info('Sunset at: %s', sun.sunset.isoformat())
   cron.append(Task(lights.on, sun.sunset.minute, sun.sunset.hour))
 
 def main():
