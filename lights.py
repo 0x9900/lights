@@ -3,7 +3,6 @@
 import RPi.GPIO as gpio
 import argparse
 import gevent
-import itertools
 import logging
 import pytz
 import random
@@ -19,7 +18,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
 
 SLEEP_TIME = 53
 LOCAL_TZ = 'America/Los_Angeles'
-PORTS = [9, 11, 0, 5, 6, 13, 19, 26]
+PORTS = (9, 11, 0, 5, 6, 13, 19, 26)
 
 LATITUDE = 37.4591
 LONGITUDE = -122.2474
@@ -187,15 +186,14 @@ class Lights(object):
   def off(self, ports=PORTS, sleep=0):
     for port in ports:
       if port in self._ports:
-        logging.info('Port %d OFF', port)
+        logging.info('Light %d / Port %2d ON', PORTS.index(port), port)
         gpio.output(port, gpio.HIGH)
         time.sleep(sleep)
 
   def on(self, ports=PORTS, sleep=0):
-    now = datetime.now()
     for port in ports:
       if port in self._ports:
-        logging.info('Port %d ON', port)
+        logging.info('Light %d / Port %2d ON', PORTS.index(port), port)
         gpio.output(port , gpio.LOW)
         time.sleep(sleep)
 
