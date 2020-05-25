@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.7
 #
 import RPi.GPIO as gpio
+import argparse
 import gevent
 import itertools
 import logging
@@ -8,7 +9,6 @@ import pytz
 import random
 import requests
 import time
-
 
 from datetime import datetime
 from datetime import timedelta
@@ -24,8 +24,7 @@ PORTS = [9, 11, 0, 5, 6, 13, 19, 26]
 LATITUDE = 37.4591
 LONGITUDE = -122.2474
 
-def conv_to_set(obj):
-  """Converts to set allowing single integer to be provided"""
+def to_set(obj):
   if isinstance(obj, int):
     return set([obj])  # Single item
   if not isinstance(obj, set):
@@ -85,26 +84,28 @@ class Event(object):
   def __init__(self, action, minute=allMatch, hour=allMatch,
                day=allMatch, month=allMatch, daysofweek=allMatch,
                *args, **kwargs):
-    self.mins = conv_to_set(minute)
-    self.hours = conv_to_set(hour)
-    self.days = conv_to_set(day)
-    self.months = conv_to_set(month)
-    self.daysofweek = conv_to_set(daysofweek)
+    self.mins = to_set(minute)
+    self.hours = to_set(hour)
+    self.days = to_set(day)
+    self.months = to_set(month)
+    self.daysofweek = to_set(daysofweek)
     self.action = action
     self.args = args
     self.kwargs = kwargs
 
-  def matchtime(self, t1):
+  def matchtime(self, tm1):
     """Return True if this event should trigger at the specified datetime"""
-    return ((t1.minute     in self.mins) and
-            (t1.hour       in self.hours) and
-            (t1.day        in self.days) and
-            (t1.month      in self.months) and
-            (t1.weekday()  in self.daysofweek))
+    return (
+      tm1.minute in self.mins and
+      tm1.hour in self.hours and
+      tm1.day in self.days and
+      tm1.month in self.months and
+      tm1.weekday() in self.daysofweek
+    )
 
-  def check(self, t):
+  def check(self, tm1):
     """Check and run action if needed"""
-    if self.matchtime(t):
+    if self.matchtime(tm1):
       self.action(*self.args, **self.kwargs)
 
   def __eq__(self, other):
@@ -117,8 +118,6 @@ class Event(object):
       self.daysofweek == other.daysofweek
     )
 
-  def __hash__(self):
-    return id(self)
 
 class Task(Event):
   """Like an Event but only run once"""
@@ -126,11 +125,11 @@ class Task(Event):
     super(Task, self).__init__(*args, **kwargs)
     self.has_run = False
 
-  def check(self, t):
+  def check(self, tm1):
     if self.has_run:
       logging.debug('Task: %r has already run', self)
       return
-    if self.matchtime(t):
+    if self.matchtime(tm1):
       self.has_run = True
       self.action(*self.args, **self.kwargs)
 
@@ -144,13 +143,13 @@ class CronTab(object):
 
   def _check(self):
     """Check all events in separate greenlets"""
-    t1 = datetime(*datetime.now().timetuple()[:5])
+    tm1 = datetime(*datetime.now().timetuple()[:5])
     for event in self.events:
-      gevent.spawn(event.check, t1)
+      gevent.spawn(event.check, tm1)
 
-    t1 += timedelta(minutes=1)
-    s1 = (t1 - datetime.now()).seconds + 1
-    job = gevent.spawn_later(s1, self._check)
+    tm1 += timedelta(minutes=1)
+    sec = (tm1 - datetime.now()).seconds + 1
+    job = gevent.spawn_later(sec, self._check)
 
   def run(self):
     """Run the cron forever"""
@@ -178,46 +177,36 @@ class CronTab(object):
 
 class Lights(object):
 
-  def __init__(self, start_time=None, stop_time=None, ports=PORTS):
+  def __init__(self, ports=PORTS):
     self._ports = ports
-    self._start_time = start_time
-    self._stop_time = stop_time
-
     gpio.setwarnings(False)
     gpio.setmode(gpio.BCM)
     for port in self._ports:
       gpio.setup(port, gpio.OUT)
-    self.off(self._ports)
 
-  def off(self, ports=PORTS):
-    logging.info('all off')
+  def off(self, ports=PORTS, sleep=0):
     for port in ports:
       if port in self._ports:
+        logging.info('Port %d OFF', port)
         gpio.output(port, gpio.HIGH)
+        time.sleep(sleep)
 
-  def on(self, ports=PORTS):
+  def on(self, ports=PORTS, sleep=0):
     now = datetime.now()
-    if self._start_time is None or self._start_time < now < self._stop_time:
-      logging.info('all on')
-      for port in ports:
-        if port in self._ports:
-          gpio.output(port , gpio.LOW)
-    else:
-      logging.warning('all on outside time bounderies')
+    for port in ports:
+      if port in self._ports:
+        logging.info('Port %d ON', port)
+        gpio.output(port , gpio.LOW)
+        time.sleep(sleep)
 
   def random(self, count=25):
-    if self._stop_time is None or self._stop_time < now < self._stop_time:
-      logging.info('random - count:%d', count)
-      self.off()
-      for _ in range(count):
-        port = random.choice(PORTS)
-        gpio.output(port, gpio.LOW)
-        time.sleep(.05)
-        gpio.output(port, gpio.HIGH)
-        time.sleep(.05)
-      self.on()
-    else:
-      logging.warning('random outside time bounderies')
+    logging.info('random - count:%d', count)
+    for _ in range(count):
+      port = random.choice(PORTS)
+      gpio.output(port, gpio.LOW)
+      time.sleep(.05)
+      gpio.output(port, gpio.HIGH)
+      time.sleep(.05)
 
 def Right():
   logging.info('Right')
@@ -255,13 +244,29 @@ def add_sunset_task(cron=None, lights=None):
 
 def main():
   lights = Lights()
-  cron = CronTab()
+  parser = argparse.ArgumentParser(description='Garden lights')
+  on_off = parser.add_mutually_exclusive_group()
+  on_off.add_argument('--off', action="store_true", help='Turn off all the lights')
+  on_off.add_argument('--on', action="store_true", help='Turn on all the lights')
+  on_off.add_argument('--random', action="store_true", help='Random sequence')
+  pargs = parser.parse_args()
 
+  if pargs.off:
+    lights.off()
+    return
+  if pargs.on:
+    lights.on()
+    return
+  if pargs.random:
+    lights.random()
+    return
+
+  cron = CronTab()
   cron.append(Task(add_sunset_task, cron=cron, lights=lights))
   cron.append(Event(lights.off, 59, 23))
   cron.append(Event(add_sunset_task, 0, [2, 14], cron=cron, lights=lights))
+  cron.append(Event(lights.random))
   cron.run()
-
 
 if __name__ == "__main__":
   main()
