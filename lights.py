@@ -82,14 +82,13 @@ class Event(object):
   """The Actual Event Class"""
   def __init__(self, action, minute=ALLMATCH, hour=ALLMATCH,
                day=ALLMATCH, month=ALLMATCH, daysofweek=ALLMATCH,
-               *args, **kwargs):
+               **kwargs):
     self.mins = to_set(minute)
     self.hours = to_set(hour)
     self.days = to_set(day)
     self.months = to_set(month)
     self.daysofweek = to_set(daysofweek)
     self.action = action
-    self.args = args
     self.kwargs = kwargs
 
   def matchtime(self, tm1):
@@ -105,7 +104,7 @@ class Event(object):
   def check(self, tm1):
     """Check and run action if needed"""
     if self.matchtime(tm1):
-      self.action(*self.args, **self.kwargs)
+      self.action(**self.kwargs)
 
   def __eq__(self, other):
     return (
@@ -130,7 +129,7 @@ class Task(Event):
       return
     if self.matchtime(tm1):
       self.has_run = True
-      self.action(*self.args, **self.kwargs)
+      self.action(**self.kwargs)
 
 
 class CronTab(object):
