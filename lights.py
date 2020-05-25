@@ -242,31 +242,44 @@ def add_sunset_task(cron=None, lights=None):
   logging.info('Sunset at: %s', sun.sunset.isoformat())
   cron.append(Task(lights.on, sun.sunset.minute, sun.sunset.hour))
 
+def light_show(lights=None):
+  if not lights:
+    return
+  sun = Sunset()
+  tzone = pytz.timezone(LOCAL_TZ)
+  now = datetime.now(tz=tzone)
+  tomorrow = now.date() + timedelta(days=1)
+  midnight = tzone.localize(datetime.combine(tomorrow, datetime.min.time()))
+
+  lights.off()
+  time.sleep(2)
+  lights.random(50)
+  if sun.sunset < now < nidnight:
+    lights.on()
+
 def main():
   lights = Lights()
   parser = argparse.ArgumentParser(description='Garden lights')
-  on_off = parser.add_mutually_exclusive_group()
+  on_off = parser.add_mutually_exclusive_group(required=True)
   on_off.add_argument('--off', action="store_true", help='Turn off all the lights')
   on_off.add_argument('--on', action="store_true", help='Turn on all the lights')
-  on_off.add_argument('--random', action="store_true", help='Random sequence')
+  on_off.add_argument('--random', type=int, default=25, help='Random sequence')
+  on_off.add_argument('--cron', action="store_true", help='Automatic mode')
   pargs = parser.parse_args()
 
-  if pargs.off:
+  if pargs.cron:
+    cron = CronTab()
+    cron.append(Task(add_sunset_task, cron=cron, lights=lights))
+    cron.append(Event(lights.off, 59, 23))
+    cron.append(Event(add_sunset_task, 0, [2, 14], cron=cron, lights=lights))
+    cron.append(Event(light_show, 0, [21, 22, 23], lights=lights))
+    cron.run()
+  elif pargs.off:
     lights.off()
-    return
-  if pargs.on:
+  elif pargs.on:
     lights.on()
-    return
-  if pargs.random:
-    lights.random()
-    return
-
-  cron = CronTab()
-  cron.append(Task(add_sunset_task, cron=cron, lights=lights))
-  cron.append(Event(lights.off, 59, 23))
-  cron.append(Event(add_sunset_task, 0, [2, 14], cron=cron, lights=lights))
-  cron.append(Event(lights.random))
-  cron.run()
+  elif pargs.random:
+    lights.random(pargs.random)
 
 if __name__ == "__main__":
   main()

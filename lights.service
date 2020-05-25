@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 Restart=on-failure
-ExecStart=/usr/local/bin/lights
+ExecStart=/usr/local/bin/lights --cron
 
 [Install]
 Alias=lights.service
