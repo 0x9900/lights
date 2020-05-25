@@ -1,16 +1,19 @@
 #!/usr/bin/env python3.7
 #
-import RPi.GPIO as gpio
+# pylint: disable=missing-docstring
+
 import argparse
-import gevent
 import logging
-import pytz
 import random
-import requests
 import time
 
 from datetime import datetime
 from datetime import timedelta
+
+import RPi.GPIO as gpio
+import gevent
+import pytz
+import requests
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%H:%M:%S',
@@ -73,15 +76,12 @@ class AllMatch(set):
   def __contains__(self, item):
     return True
 
-  def __hash__(self):
-    return hash(tuple(sorted(self.__dict__.items())))
-
-allMatch = AllMatch()
+ALLMATCH = AllMatch()
 
 class Event(object):
   """The Actual Event Class"""
-  def __init__(self, action, minute=allMatch, hour=allMatch,
-               day=allMatch, month=allMatch, daysofweek=allMatch,
+  def __init__(self, action, minute=ALLMATCH, hour=ALLMATCH,
+               day=ALLMATCH, month=ALLMATCH, daysofweek=ALLMATCH,
                *args, **kwargs):
     self.mins = to_set(minute)
     self.hours = to_set(hour)
@@ -95,11 +95,11 @@ class Event(object):
   def matchtime(self, tm1):
     """Return True if this event should trigger at the specified datetime"""
     return (
-      tm1.minute in self.mins and
-      tm1.hour in self.hours and
-      tm1.day in self.days and
-      tm1.month in self.months and
-      tm1.weekday() in self.daysofweek
+        tm1.minute in self.mins and
+        tm1.hour in self.hours and
+        tm1.day in self.days and
+        tm1.month in self.months and
+        tm1.weekday() in self.daysofweek
     )
 
   def check(self, tm1):
@@ -109,12 +109,12 @@ class Event(object):
 
   def __eq__(self, other):
     return (
-      self.action == other.action and
-      self.mins == other.mins and
-      self.hours == other.hours and
-      self.days == other.days and
-      self.months == other.months and
-      self.daysofweek == other.daysofweek
+        self.action == other.action and
+        self.mins == other.mins and
+        self.hours == other.hours and
+        self.days == other.days and
+        self.months == other.months and
+        self.daysofweek == other.daysofweek
     )
 
 
@@ -148,7 +148,7 @@ class CronTab(object):
 
     tm1 += timedelta(minutes=1)
     sec = (tm1 - datetime.now()).seconds + 1
-    job = gevent.spawn_later(sec, self._check)
+    gevent.spawn_later(sec, self._check)
 
   def run(self):
     """Run the cron forever"""
@@ -156,8 +156,8 @@ class CronTab(object):
     while True:
       gevent.sleep(SLEEP_TIME)
       garbage = [t for t in self.events if isinstance(t, Task) and t.has_run]
-      for task in garbage:
-        self.delete(task)
+      for tsk in garbage:
+        self.delete(tsk)
 
   def append(self, event):
     if event not in self.events:
@@ -194,41 +194,20 @@ class Lights(object):
     for port in ports:
       if port in self._ports:
         logging.info('Light %d / Port %2d ON', PORTS.index(port), port)
-        gpio.output(port , gpio.LOW)
+        gpio.output(port, gpio.LOW)
         time.sleep(sleep)
 
-  def random(self, count=25):
+  def random(self, ports=PORTS, count=25):
     logging.info('random - count:%d', count)
+    ports = [p for p in ports if p in self._ports]
+    if not ports:
+      return
     for _ in range(count):
-      port = random.choice(PORTS)
+      port = random.choice(ports)
       gpio.output(port, gpio.LOW)
       time.sleep(.05)
       gpio.output(port, gpio.HIGH)
       time.sleep(.05)
-
-def Right():
-  logging.info('Right')
-  ports = PORTS[::-1]
-  lg = len(ports)
-  for i in range(3):
-    for i in range(lg):
-      gpio.output(ports[i], gpio.LOW)
-      time.sleep(.5)
-    for i in range(lg):
-      gpio.output(ports[i], gpio.HIGH)
-      time.sleep(.5)
-  time.sleep(.5)
-
-def Left():
-  logging.info('Left')
-  for i in range(3):
-    for i in range(len(PORTS)):
-      gpio.output(PORTS[i], gpio.LOW)
-      time.sleep(.5)
-    for i in range(len(PORTS)):
-      gpio.output(PORTS[i], gpio.HIGH)
-      time.sleep(.5)
-  time.sleep(.5)
 
 def task():
   logging.debug('task running')
@@ -252,7 +231,7 @@ def light_show(lights=None):
   lights.off()
   time.sleep(2)
   lights.random(50)
-  if sun.sunset < now < nidnight:
+  if sun.sunset < now < midnight:
     lights.on()
 
 def main():
