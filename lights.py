@@ -18,14 +18,23 @@ logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     level=logging.DEBUG)
 
 SLEEP_TIME = 60
-LOCAL_TZ = 'PST8PDT'
+LOCAL_TZ = 'America/Los_Angeles'
 PORTS = [9, 11, 0, 5, 6, 13, 19, 26]
+
+def conv_to_set(obj):
+  """Converts to set allowing single integer to be provided"""
+  if isinstance(obj, int):
+    return set([obj])  # Single item
+  if not isinstance(obj, set):
+    obj = set(obj)
+  return obj
+
 
 class Sunset(object):
   def __init__(self):
     self._sun = {}
     lat, lng = (37.4591, -122.2474)
-    now = datetime.utcnow()
+    now = datetime.now()
 
     params = dict(lat=lat, lng=lng, formatted=0,
                   date=now.strftime('%Y-%m-%d'))
@@ -46,16 +55,8 @@ class Sunset(object):
 
   @property
   def sunset(self):
-    return self._sun['sunset'].time()
+    return self._sun['sunset']
 
-
-def conv_to_set(obj):
-  """Converts to set allowing single integer to be provided"""
-  if isinstance(obj, int):
-    return set([obj])  # Single item
-  if not isinstance(obj, set):
-    obj = set(obj)
-  return obj
 
 class AllMatch(set):
   """Universal set - match everything"""
@@ -137,7 +138,6 @@ class CronTab(object):
 
     t1 += timedelta(minutes=1)
     s1 = (t1 - datetime.now()).seconds + 1
-    logging.info("Checking again in %s seconds" % s1)
     job = gevent.spawn_later(s1, self._check)
 
   def run(self):
@@ -148,7 +148,6 @@ class CronTab(object):
       garbage = [t for t in self.events if isinstance(t, Task) and t.has_run]
       for task in garbage:
         self.delete(task)
-      logging.debug('Events len: %d', len(self.events))
 
   def append(self, event):
     if event not in self.events:
@@ -238,7 +237,7 @@ def task():
 
 def add_sunset_task(cron=None, lights=None):
   sun = Sunset()
-  logging.debug('Sunset at: %d:%d', sun.sunset.hour, sun.sunset.minute)
+  logging.debug('Sunset at: %s', sun.sunset.isoformat())
   cron.append(Task(lights.on, sun.sunset.minute, sun.sunset.hour))
 
 def main():
