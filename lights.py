@@ -5,6 +5,7 @@
 import argparse
 import logging
 import random
+import signal
 import time
 
 from datetime import datetime
@@ -19,7 +20,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%H:%M:%S',
                     level=logging.DEBUG)
 
-SLEEP_TIME = 53
+SLEEP_TIME = 7
 LOCAL_TZ = 'America/Los_Angeles'
 PORTS = (9, 11, 0, 5, 6, 13, 19, 26)
 
@@ -76,6 +77,9 @@ class AllMatch(set):
   def __contains__(self, item):
     return True
 
+  def __repr__(self):
+    return '{*}'
+
 ALLMATCH = AllMatch()
 
 class Event(object):
@@ -93,13 +97,11 @@ class Event(object):
 
   def matchtime(self, tm1):
     """Return True if this event should trigger at the specified datetime"""
-    return (
-        tm1.minute in self.mins and
-        tm1.hour in self.hours and
-        tm1.day in self.days and
-        tm1.month in self.months and
-        tm1.weekday() in self.daysofweek
-    )
+    return (tm1.minute in self.mins and
+            tm1.hour in self.hours and
+            tm1.day in self.days and
+            tm1.month in self.months and
+            tm1.weekday() in self.daysofweek)
 
   def check(self, tm1):
     """Check and run action if needed"""
@@ -107,15 +109,17 @@ class Event(object):
       self.action(**self.kwargs)
 
   def __eq__(self, other):
-    return (
-        self.action == other.action and
-        self.mins == other.mins and
-        self.hours == other.hours and
-        self.days == other.days and
-        self.months == other.months and
-        self.daysofweek == other.daysofweek
-    )
+    return (self.action == other.action and
+            self.mins == other.mins and
+            self.hours == other.hours and
+            self.days == other.days and
+            self.months == other.months and
+            self.daysofweek == other.daysofweek)
 
+  def __repr__(self):
+    _repr = "<{}> [{}] - mins:{!r} - hours:{!r} - days:{!r} - month:{!r} - weekdays:{!r}"
+    return _repr.format(self.__class__.__name__, self.action.__name__, self.mins,
+                        self.hours, self.days, self.months, self.daysofweek )
 
 class Task(Event):
   """Like an Event but only run once"""
@@ -125,7 +129,7 @@ class Task(Event):
 
   def check(self, tm1):
     if self.has_run:
-      logging.debug('Task: %r has already run', self)
+      logging.debug('%r has already run', self)
       return
     if self.matchtime(tm1):
       self.has_run = True
@@ -162,7 +166,7 @@ class CronTab(object):
     if event not in self.events:
       self.events.append(event)
     else:
-      logging.debug('event already in the list')
+      logging.debug('already in the list: %r', event)
 
   def delete(self, event):
     try:
@@ -185,14 +189,14 @@ class Lights(object):
   def off(self, ports=PORTS, sleep=0):
     for port in ports:
       if port in self._ports:
-        logging.info('Light %d / Port %2d OFF', PORTS.index(port), port)
+        logging.info('Light %d(%02d) OFF', PORTS.index(port), port)
         gpio.output(port, gpio.HIGH)
         time.sleep(sleep)
 
   def on(self, ports=PORTS, sleep=0):
     for port in ports:
       if port in self._ports:
-        logging.info('Light %d / Port %2d ON', PORTS.index(port), port)
+        logging.info('Light %d(%02d) ON', PORTS.index(port), port)
         gpio.output(port, gpio.LOW)
         time.sleep(sleep)
 
@@ -208,19 +212,7 @@ class Lights(object):
       gpio.output(port, gpio.HIGH)
       time.sleep(.05)
 
-def task():
-  logging.debug('task running')
-  time.sleep(4)
-  logging.debug('task done')
-
-def add_sunset_task(cron=None, lights=None):
-  sun = Sunset()
-  logging.info('Sunset at: %s', sun.sunset.isoformat())
-  cron.append(Task(lights.on, sun.sunset.minute, sun.sunset.hour))
-
-def light_show(lights=None):
-  if not lights:
-    return
+def light_show(lights):
   sun = Sunset()
   tzone = pytz.timezone(LOCAL_TZ)
   now = datetime.now(tz=tzone)
@@ -233,7 +225,23 @@ def light_show(lights=None):
   if sun.sunset < now < midnight:
     lights.on()
 
+def sig_handler(sig, frame):
+  logging.debug('Caught signal: %d', sig)
+  try:
+    for event in cron.events:
+      logging.info('%r', event)
+  except NameError as err:
+    logging.error(err)
+
+def add_sunset_task(cron, lights):
+  sun = Sunset()
+  logging.info('Sunset at: %s', sun.sunset.time())
+  task = Task(lights.on, sun.sunset.minute, sun.sunset.hour)
+  cron.append(task)
+  logging.info('Add task %r', task)
+
 def main():
+  global cron
   lights = Lights()
   parser = argparse.ArgumentParser(description='Garden lights')
   on_off = parser.add_mutually_exclusive_group(required=True)
@@ -242,13 +250,13 @@ def main():
   on_off.add_argument('--random', type=int, default=25, help='Random sequence')
   on_off.add_argument('--cron', action="store_true", help='Automatic mode')
   pargs = parser.parse_args()
+  signal.signal(signal.SIGUSR1, sig_handler)
 
   if pargs.cron:
     cron = CronTab()
-    cron.append(Task(add_sunset_task, cron=cron, lights=lights))
-    cron.append(Event(lights.off, 59, 23))
-    cron.append(Event(add_sunset_task, 0, [2, 14], cron=cron, lights=lights))
-    cron.append(Event(light_show, 0, [21, 22, 23], lights=lights))
+    add_sunset_task(cron, lights)
+    cron.append(Event(lights.off, 0, 23))
+    cron.append(Event(add_sunset_task, 0, (2, 8, 14, 20), cron=cron, lights=lights))
     cron.run()
   elif pargs.off:
     lights.off()
