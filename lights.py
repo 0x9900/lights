@@ -229,7 +229,7 @@ def light_show(lights):
   if sun.sunset < now < midnight:
     lights.on()
 
-def sig_handler(sig, frame):
+def sig_dump(sig, frame):
   logging.debug('Caught signal: %d', sig)
   try:
     for event in cron.events:
@@ -272,7 +272,7 @@ def main():
   on_off.add_argument('--random', type=int, default=25, help='Random sequence')
   on_off.add_argument('--cron', action="store_true", help='Automatic mode')
   pargs = parser.parse_args()
-  signal.signal(signal.SIGUSR1, sig_handler)
+  signal.signal(signal.SIGHUP, sig_dump)
 
   if pargs.cron:
     automation(lights)
