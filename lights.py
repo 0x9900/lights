@@ -221,7 +221,7 @@ def light_show(lights):
 
   lights.off()
   time.sleep(2)
-  lights.random(50)
+  lights.random(64)
   if sun.sunset < now < midnight:
     lights.on()
 
@@ -240,8 +240,26 @@ def add_sunset_task(cron, lights):
   cron.append(task)
   logging.info('Add task %r', task)
 
-def main():
+def automation(lights):
   global cron
+  sun = Sunset()
+  now = datetime.now(tz=pytz.timezone(LOCAL_TZ))
+
+  # If the service is started after sunset, turn on the lights.
+  if now > sun.sunset:
+    lights.on()
+  else:
+    lights.off()
+
+  cron = CronTab(
+      Event(lights.off, 10, 23), # Turn off the lights at 11:10pm
+      Event(light_show, 0, [21, 22, 23], lights=lights) # Light show every hour after sunset
+  )
+  cron.append(Event(add_sunset_task, 0, (2, 8, 14, 20), cron=cron, lights=lights))
+  add_sunset_task(cron, lights)
+  cron.run()
+
+def main():
   lights = Lights()
   parser = argparse.ArgumentParser(description='Garden lights')
   on_off = parser.add_mutually_exclusive_group(required=True)
@@ -253,11 +271,7 @@ def main():
   signal.signal(signal.SIGUSR1, sig_handler)
 
   if pargs.cron:
-    cron = CronTab()
-    add_sunset_task(cron, lights)
-    cron.append(Event(lights.off, 0, 23))
-    cron.append(Event(add_sunset_task, 0, (2, 8, 14, 20), cron=cron, lights=lights))
-    cron.run()
+    automation(lights)
   elif pargs.off:
     lights.off()
   elif pargs.on:
