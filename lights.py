@@ -187,21 +187,25 @@ class Lights(object):
       gpio.setup(port, gpio.OUT)
 
   def off(self, ports=PORTS, sleep=0):
+    log_msg = []
     for port in ports:
       if port in self._ports:
-        logging.info('Light %d(%02d) OFF', PORTS.index(port), port)
+        log_msg.append("{:d}/{:02d}".format(PORTS.index(port), port))
         gpio.output(port, gpio.HIGH)
         time.sleep(sleep)
+    logging.info("Ports OFF [%s]", ','.join(log_msg))
 
   def on(self, ports=PORTS, sleep=0):
+    log_msg = []
     for port in ports:
       if port in self._ports:
-        logging.info('Light %d(%02d) ON', PORTS.index(port), port)
+        log_msg.append("{:d}/{:02d}".format(PORTS.index(port), port))
         gpio.output(port, gpio.LOW)
         time.sleep(sleep)
+    logging.info("Ports ON [%s]", ','.join(log_msg))
 
   def random(self, count=25, ports=PORTS):
-    logging.info('random - count:%d', count)
+    logging.info('Random - count:%d', count)
     ports = [p for p in ports if p in self._ports]
     if not ports:
       return
