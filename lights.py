@@ -18,7 +18,7 @@ import requests
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%H:%M:%S',
-                    level=logging.DEBUG)
+                    level=logging.INFO)
 
 SLEEP_TIME = 7
 LOCAL_TZ = 'America/Los_Angeles'
@@ -229,8 +229,9 @@ def light_show(lights):
   if sun.sunset < now < midnight:
     lights.on()
 
-def sig_dump(sig, frame):
-  logging.debug('Caught signal: %d', sig)
+def sig_dump():
+  global cron
+  logging.debug('Caught signal: SIGHUP')
   try:
     for event in cron.events:
       logging.info('%r', event)
@@ -257,6 +258,8 @@ def automation(lights):
 
   cron = CronTab(
       Event(lights.off, 10, 23), # Turn off the lights at 11:10pm
+      Event(lights.on, range(0, 60, 2), [13, 15, 17]),
+      Event(lights.off, range(1, 60, 2), [13, 15, 17]),
       Event(light_show, 0, [21, 22, 23], lights=lights) # Light show every hour after sunset
   )
   cron.append(Event(add_sunset_task, 0, (2, 8, 14, 20), cron=cron, lights=lights))
@@ -272,7 +275,7 @@ def main():
   on_off.add_argument('--random', type=int, default=25, help='Random sequence')
   on_off.add_argument('--cron', action="store_true", help='Automatic mode')
   pargs = parser.parse_args()
-  signal.signal(signal.SIGHUP, sig_dump)
+  gevent.signal_handler(signal.SIGHUP, sig_dump)
 
   if pargs.cron:
     automation(lights)
