@@ -4,8 +4,10 @@
 
 import argparse
 import logging
+import os
 import random
 import signal
+import sys
 import time
 
 from datetime import datetime
@@ -13,19 +15,17 @@ from datetime import timedelta
 
 import RPi.GPIO as gpio
 import gevent
+import json
 import pytz
 import requests
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%H:%M:%S',
-                    level=logging.INFO)
+                    level=logging.DEBUG)
 
 SLEEP_TIME = 7
-LOCAL_TZ = 'America/Los_Angeles'
-PORTS = (9, 11, 0, 5, 6, 13, 19, 26)
-
-LATITUDE = 37.4591
-LONGITUDE = -122.2474
+CONFIG_FILE = '/etc/lights.json'
+MANDATORY_FIELDS = {'ports', 'local_tz', 'latitude', 'longitude'}
 
 def to_set(obj):
   if isinstance(obj, int):
@@ -35,18 +35,58 @@ def to_set(obj):
   return obj
 
 
-class Sunset(object):
+class Config:
+  _instance = None
+  config_data = None
+  def __new__(cls, *args, **kwargs):
+    if cls._instance is None:
+      cls._instance = super(Config, cls).__new__(cls)
+      cls._instance.config_data = {}
+    return cls._instance
+
+  def __init__(self, config_file=CONFIG_FILE):
+    if self.config_data:
+      return
+    logging.debug('Reading config file')
+    if not os.path.exists(config_file):
+      logging.error('Configuration file "%s" not found', config_file)
+      sys.exit(os.EX_CONFIG)
+
+    try:
+      with open(CONFIG_FILE, 'r') as confd:
+        lines = []
+        for line in confd:
+          line = line.strip()
+          if not line or line.startswith('#'):
+            continue
+          lines.append(line)
+        self.config_data = json.loads('\n'.join(lines))
+    except ValueError as err:
+      logging.error('Configuration error: "%s"', err)
+      sys.exit(os.EX_CONFIG)
+
+    missing_fields = self.config_data.keys() ^ MANDATORY_FIELDS
+    if missing_fields != set():
+      logging.error('Configuration keys "%s" are missing', missing_fields)
+      sys.exit(os.EX_CONFIG)
+
+  def __getattr__(self, attr):
+    if attr not in self.config_data:
+      raise AttributeError("'{}' object has no attribute '{}'".format(self.__class__, attr))
+    return self.config_data[attr]
+
+
+class Sunset:
   __cache = {}
 
-  def __init__(self):
-    lat, lng = (LATITUDE, LONGITUDE)
+  def __init__(self, timez, lat, lon):
     now = datetime.now()
 
     if now.date() in Sunset.__cache:
       self._sun = self.__cache[now.date()]
       return
 
-    params = dict(lat=lat, lng=lng, formatted=0,
+    params = dict(lat=lat, lng=lon, formatted=0,
                   date=now.strftime('%Y-%m-%d'))
     url = 'https://api.sunrise-sunset.org/json'
     try:
@@ -56,7 +96,7 @@ class Sunset(object):
       logging.error(err)
       raise
 
-    tzone = pytz.timezone(LOCAL_TZ)
+    tzone = pytz.timezone(timez)
     self._sun = {}
     for key, val in data['results'].items():
       if key == 'day_length':
@@ -82,7 +122,8 @@ class AllMatch(set):
 
 ALLMATCH = AllMatch()
 
-class Event(object):
+
+class Event:
   """The Actual Event Class"""
   def __init__(self, action, minute=ALLMATCH, hour=ALLMATCH,
                day=ALLMATCH, month=ALLMATCH, daysofweek=ALLMATCH,
@@ -119,7 +160,7 @@ class Event(object):
   def __repr__(self):
     _repr = "<{}> [{}] - mins:{!r} - hours:{!r} - days:{!r} - month:{!r} - weekdays:{!r}"
     return _repr.format(self.__class__.__name__, self.action.__name__, self.mins,
-                        self.hours, self.days, self.months, self.daysofweek )
+                        self.hours, self.days, self.months, self.daysofweek)
 
 class Task(Event):
   """Like an Event but only run once"""
@@ -136,7 +177,7 @@ class Task(Event):
       self.action(**self.kwargs)
 
 
-class CronTab(object):
+class CronTab:
   """The crontab implementation"""
   def __init__(self, *events):
     self.events = list()
@@ -177,38 +218,41 @@ class CronTab(object):
       logging.debug('%r not found', event)
 
 
-class Lights(object):
+class Lights:
 
-  def __init__(self, ports=PORTS):
+  def __init__(self, ports):
     self._ports = ports
     gpio.setwarnings(False)
     gpio.setmode(gpio.BCM)
     for port in self._ports:
       gpio.setup(port, gpio.OUT)
 
-  def off(self, ports=PORTS, sleep=0):
+  def off(self, ports=None, sleep=0):
     log_msg = []
+    if not ports:
+      ports = self._ports
     for port in ports:
       if port in self._ports:
-        log_msg.append("{:d}/{:02d}".format(PORTS.index(port), port))
+        log_msg.append("{:02d}".format(port))
         gpio.output(port, gpio.HIGH)
         time.sleep(sleep)
     logging.info("Ports OFF [%s]", ','.join(log_msg))
 
-  def on(self, ports=PORTS, sleep=0):
+  def on(self, ports=None, sleep=0):
     log_msg = []
+    if not ports:
+      ports = self._ports
     for port in ports:
       if port in self._ports:
-        log_msg.append("{:d}/{:02d}".format(PORTS.index(port), port))
+        log_msg.append("{:02d}".format(port))
         gpio.output(port, gpio.LOW)
         time.sleep(sleep)
     logging.info("Ports ON [%s]", ','.join(log_msg))
 
-  def random(self, count=25, ports=PORTS):
+  def random(self, ports=None, count=25):
     logging.info('Random - count:%d', count)
-    ports = [p for p in ports if p in self._ports]
     if not ports:
-      return
+      ports = self._ports[:]
     for _ in range(count):
       port = random.choice(ports)
       gpio.output(port, gpio.LOW)
@@ -217,15 +261,16 @@ class Lights(object):
       time.sleep(.05)
 
 def light_show(lights):
-  sun = Sunset()
-  tzone = pytz.timezone(LOCAL_TZ)
+  config = Config()
+  sun = Sunset(config.local_tz, config.latitude, config.longitude)
+  tzone = pytz.timezone(config.local_tz)
   now = datetime.now(tz=tzone)
   tomorrow = now.date() + timedelta(days=1)
   midnight = tzone.localize(datetime.combine(tomorrow, datetime.min.time()))
 
   lights.off()
   time.sleep(2)
-  lights.random(64)
+  lights.random(count=64)
   if sun.sunset < now < midnight:
     lights.on()
 
@@ -239,7 +284,9 @@ def sig_dump():
     logging.error(err)
 
 def add_sunset_task(cron, lights):
-  sun = Sunset()
+  global cron
+  config = Config()
+  sun = Sunset(config.local_tz, config.latitude, config.longitude)
   logging.info('Sunset at: %s', sun.sunset.time())
   task = Task(lights.on, sun.sunset.minute, sun.sunset.hour)
   cron.append(task)
@@ -247,8 +294,9 @@ def add_sunset_task(cron, lights):
 
 def automation(lights):
   global cron
-  sun = Sunset()
-  now = datetime.now(tz=pytz.timezone(LOCAL_TZ))
+  config = Config()
+  sun = Sunset(config.local_tz, config.latitude, config.longitude)
+  now = datetime.now(tz=pytz.timezone(config.local_tz))
 
   # If the service is started after sunset, turn on the lights.
   if now > sun.sunset:
@@ -267,7 +315,8 @@ def automation(lights):
   cron.run()
 
 def main():
-  lights = Lights()
+  config = Config()
+  lights = Lights(config.ports)
   parser = argparse.ArgumentParser(description='Garden lights')
   on_off = parser.add_mutually_exclusive_group(required=True)
   on_off.add_argument('--off', action="store_true", help='Turn off all the lights')
@@ -284,7 +333,7 @@ def main():
   elif pargs.on:
     lights.on()
   elif pargs.random:
-    lights.random(pargs.random)
+    lights.random(count=pargs.random)
 
 if __name__ == "__main__":
   main()
