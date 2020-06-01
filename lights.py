@@ -7,6 +7,7 @@ import logging
 import os
 import random
 import signal
+import sys
 import time
 
 from datetime import datetime
@@ -34,9 +35,10 @@ def to_set(obj):
   return obj
 
 
-class Config(object):
+class Config:
   _instance = None
-  def __new__(cls):
+  config_data = None
+  def __new__(cls, *args, **kwargs):
     if cls._instance is None:
       cls._instance = super(Config, cls).__new__(cls)
       cls._instance.config_data = {}
@@ -52,15 +54,21 @@ class Config(object):
 
     try:
       with open(CONFIG_FILE, 'r') as confd:
-        self.config_data = json.load(confd)
+        lines = []
+        for line in confd:
+          line = line.strip()
+          if not line or line.startswith('#'):
+            continue
+          lines.append(line)
+        self.config_data = json.loads('\n'.join(lines))
     except ValueError as err:
       logging.error('Configuration error: "%s"', err)
-      os.exit(os.EX_CONFIG)
+      sys.exit(os.EX_CONFIG)
 
     missing_fields = self.config_data.keys() ^ MANDATORY_FIELDS
     if missing_fields != set():
       logging.error('Configuration keys "%s" are missing', missing_fields)
-      os.exit(os.EX_CONFIG)
+      sys.exit(os.EX_CONFIG)
 
   def __getattr__(self, attr):
     if attr not in self.config_data:
@@ -68,7 +76,7 @@ class Config(object):
     return self.config_data[attr]
 
 
-class Sunset(object):
+class Sunset:
   __cache = {}
 
   def __init__(self, timez, lat, lon):
@@ -114,7 +122,8 @@ class AllMatch(set):
 
 ALLMATCH = AllMatch()
 
-class Event(object):
+
+class Event:
   """The Actual Event Class"""
   def __init__(self, action, minute=ALLMATCH, hour=ALLMATCH,
                day=ALLMATCH, month=ALLMATCH, daysofweek=ALLMATCH,
@@ -151,7 +160,7 @@ class Event(object):
   def __repr__(self):
     _repr = "<{}> [{}] - mins:{!r} - hours:{!r} - days:{!r} - month:{!r} - weekdays:{!r}"
     return _repr.format(self.__class__.__name__, self.action.__name__, self.mins,
-                        self.hours, self.days, self.months, self.daysofweek )
+                        self.hours, self.days, self.months, self.daysofweek)
 
 class Task(Event):
   """Like an Event but only run once"""
@@ -168,7 +177,7 @@ class Task(Event):
       self.action(**self.kwargs)
 
 
-class CronTab(object):
+class CronTab:
   """The crontab implementation"""
   def __init__(self, *events):
     self.events = list()
@@ -209,7 +218,7 @@ class CronTab(object):
       logging.debug('%r not found', event)
 
 
-class Lights(object):
+class Lights:
 
   def __init__(self, ports):
     self._ports = ports
@@ -275,6 +284,7 @@ def sig_dump():
     logging.error(err)
 
 def add_sunset_task(cron, lights):
+  global cron
   config = Config()
   sun = Sunset(config.local_tz, config.latitude, config.longitude)
   logging.info('Sunset at: %s', sun.sunset.time())
