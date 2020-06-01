@@ -36,7 +36,7 @@ def to_set(obj):
 
 class Config(object):
   _instance = None
-  def __new__(cls):
+  def __new__(cls, *args, **kwargs):
     if cls._instance is None:
       cls._instance = super(Config, cls).__new__(cls)
       cls._instance.config_data = {}
@@ -52,7 +52,13 @@ class Config(object):
 
     try:
       with open(CONFIG_FILE, 'r') as confd:
-        self.config_data = json.load(confd)
+        lines = []
+        for line in confd:
+          line = line.strip();
+          if not line or line.startswith('#'):
+            continue
+          lines.append(line)
+        self.config_data = json.loads('\n'.join(lines))
     except ValueError as err:
       logging.error('Configuration error: "%s"', err)
       os.exit(os.EX_CONFIG)

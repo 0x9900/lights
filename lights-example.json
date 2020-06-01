@@ -1,0 +1,9 @@
+# This configuration file is an example.
+# Edit, then copy this file into /etc/lights.json
+#
+{
+  "local_tz": "America/Los_Angeles",
+  "ports": [ 9, 11, 0, 5 ],
+  "latitude": 37.4592,
+  "longitude": -122.2475
+}
