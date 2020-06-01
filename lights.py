@@ -284,7 +284,6 @@ def sig_dump():
     logging.error(err)
 
 def add_sunset_task(cron, lights):
-  global cron
   config = Config()
   sun = Sunset(config.local_tz, config.latitude, config.longitude)
   logging.info('Sunset at: %s', sun.sunset.time())
