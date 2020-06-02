@@ -12,7 +12,7 @@ echo 'Installing lights.py'
 cp lights.py /usr/local/bin/lights
 chmod a+x /usr/local/bin/lights
 
-if [[ ! -f /etc/lights.conf ]]; then
+if [[ ! -f /etc/lights.json ]]; then
     cp lights-example.json /etc/lights.json
     echo "**********************************************************************"
     echo "*  Installing a new configuration file into /etc/lights.json"
