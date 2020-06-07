@@ -249,16 +249,16 @@ class Lights:
         time.sleep(sleep)
     logging.info("Ports ON [%s]", ','.join(log_msg))
 
-  def random(self, ports=None, count=25):
+  def random(self, ports=None, count=25, delay=0.1):
     logging.info('Random - count:%d', count)
     if not ports:
       ports = self._ports[:]
     for _ in range(count):
       port = random.choice(ports)
       gpio.output(port, gpio.LOW)
-      time.sleep(.05)
+      time.sleep(delay)
       gpio.output(port, gpio.HIGH)
-      time.sleep(.05)
+      time.sleep(delay)
 
 def light_show(lights):
   config = Config()
