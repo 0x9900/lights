@@ -249,7 +249,7 @@ class Lights:
         time.sleep(sleep)
     logging.info("Ports ON [%s]", ','.join(log_msg))
 
-  def random(self, ports=None, count=25, delay=0.1):
+  def random(self, ports=None, count=25, delay=0.2):
     logging.info('Random - count:%d', count)
     if not ports:
       ports = self._ports[:]
@@ -260,6 +260,7 @@ class Lights:
       gpio.output(port, gpio.HIGH)
       time.sleep(delay)
 
+
 def light_show(lights):
   config = Config()
   sun = Sunset(config.local_tz, config.latitude, config.longitude)
@@ -269,10 +270,11 @@ def light_show(lights):
   midnight = tzone.localize(datetime.combine(tomorrow, datetime.min.time()))
 
   lights.off()
-  time.sleep(2)
-  lights.random(count=64)
+  time.sleep(1)
+  lights.random(count=96)
   if sun.sunset < now < midnight:
     lights.on()
+
 
 def sig_dump():
   global cron
@@ -305,8 +307,6 @@ def automation(lights):
 
   cron = CronTab(
       Event(lights.off, 10, 23), # Turn off the lights at 11:10pm
-      Event(lights.on, range(0, 60, 2), [13, 15, 17]),
-      Event(lights.off, range(1, 60, 2), [13, 15, 17]),
       Event(light_show, 0, [21, 22, 23], lights=lights) # Light show every hour after sunset
   )
   cron.append(Event(add_sunset_task, 0, (2, 8, 14, 20), cron=cron, lights=lights))
