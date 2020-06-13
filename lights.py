@@ -19,9 +19,9 @@ import json
 import pytz
 import requests
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
+logging.basicConfig(format='%(asctime)s %(levelname)s[%(process)d]: %(message)s',
                     datefmt='%H:%M:%S',
-                    level=logging.DEBUG)
+                    level=logging.INFO)
 
 SLEEP_TIME = 7
 CONFIG_FILE = '/etc/lights.json'
@@ -204,18 +204,19 @@ class CronTab:
         self.delete(tsk)
 
   def append(self, event):
+    logging.info('CronTab add: %r', event)
     if event not in self.events:
       self.events.append(event)
     else:
-      logging.debug('already in the list: %r', event)
+      logging.warning('CronTab duplicate %r', event)
 
   def delete(self, event):
     try:
       pos = self.events.index(event)
       del self.events[pos]
-      logging.debug('Deleting: %r', event)
+      logging.info('CronTab delete: %r', event)
     except ValueError:
-      logging.debug('%r not found', event)
+      logging.warning('CronTab not found %r', event)
 
 
 class Lights:
@@ -249,7 +250,7 @@ class Lights:
         time.sleep(sleep)
     logging.info("Ports ON [%s]", ','.join(log_msg))
 
-  def random(self, ports=None, count=25, delay=0.2):
+  def random(self, ports=None, count=25, delay=0.15):
     logging.info('Random - count:%d', count)
     if not ports:
       ports = self._ports[:]
@@ -262,18 +263,25 @@ class Lights:
 
 
 def light_show(lights):
-  config = Config()
-  sun = Sunset(config.local_tz, config.latitude, config.longitude)
-  tzone = pytz.timezone(config.local_tz)
-  now = datetime.now(tz=tzone)
-  tomorrow = now.date() + timedelta(days=1)
-  midnight = tzone.localize(datetime.combine(tomorrow, datetime.min.time()))
-
   lights.off()
-  time.sleep(1)
-  lights.random(count=96)
-  if sun.sunset < now < midnight:
+
+  for _ in range(5):
     lights.on()
+    time.sleep(.2)
+    lights.off()
+    time.sleep(.4)
+
+  time.sleep(0.5)
+  lights.random(count=64)
+
+  for _ in range(5):
+    lights.on()
+    time.sleep(.2)
+    lights.off()
+    time.sleep(.4)
+
+  time.sleep(0.5)
+  lights.on()
 
 
 def sig_dump():
@@ -285,13 +293,14 @@ def sig_dump():
   except NameError as err:
     logging.error(err)
 
+
 def add_sunset_task(cron, lights):
   config = Config()
   sun = Sunset(config.local_tz, config.latitude, config.longitude)
   logging.info('Sunset at: %s', sun.sunset.time())
   task = Task(lights.on, sun.sunset.minute, sun.sunset.hour)
   cron.append(task)
-  logging.info('Add task %r', task)
+
 
 def automation(lights):
   global cron
@@ -299,32 +308,29 @@ def automation(lights):
   sun = Sunset(config.local_tz, config.latitude, config.longitude)
   now = datetime.now(tz=pytz.timezone(config.local_tz))
 
-  # If the service is started after sunset, turn on the lights.
-  if now > sun.sunset:
-    lights.on()
-  else:
-    lights.off()
-
   cron = CronTab(
-      Event(lights.off, 10, 22), # Turn off the lights at 10:10pm
       Event(light_show, [0, 30], [21, 22], lights=lights), # Light show every hour after sunset
-      Event(lights.off, 0, 1), # Turn off the lights at 1:00am no matter what
+      Event(lights.off, 35, 22), # Turn off the lights at 10:10pm
+      Event(lights.off, 0, 0), # Turn off the lights at midnight no matter what
   )
   cron.append(Event(add_sunset_task, 0, (2, 8, 14, 20), cron=cron, lights=lights))
   add_sunset_task(cron, lights)
   cron.run()
 
+
 def main():
   config = Config()
-  lights = Lights(config.ports)
   parser = argparse.ArgumentParser(description='Garden lights')
   on_off = parser.add_mutually_exclusive_group(required=True)
   on_off.add_argument('--off', action="store_true", help='Turn off all the lights')
   on_off.add_argument('--on', action="store_true", help='Turn on all the lights')
   on_off.add_argument('--random', type=int, default=25, help='Random sequence')
+  on_off.add_argument('--light-show', action="store_true", help='Light show')
   on_off.add_argument('--cron', action="store_true", help='Automatic mode')
   pargs = parser.parse_args()
   gevent.signal_handler(signal.SIGHUP, sig_dump)
+
+  lights = Lights(config.ports)
 
   if pargs.cron:
     automation(lights)
@@ -332,6 +338,8 @@ def main():
     lights.off()
   elif pargs.on:
     lights.on()
+  elif pargs.light_show:
+    light_show(lights)
   elif pargs.random:
     lights.random(count=pargs.random)
 
