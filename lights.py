@@ -21,7 +21,7 @@ import requests
 
 logging.basicConfig(format='%(asctime)s %(levelname)s[%(process)d]: %(message)s',
                     datefmt='%H:%M:%S',
-                    level=logging.DEBUG)
+                    level=logging.INFO)
 
 SLEEP_TIME = 7
 CONFIG_FILE = '/etc/lights.json'
