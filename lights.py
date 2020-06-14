@@ -21,7 +21,7 @@ import requests
 
 logging.basicConfig(format='%(asctime)s %(levelname)s[%(process)d]: %(message)s',
                     datefmt='%H:%M:%S',
-                    level=logging.INFO)
+                    level=logging.DEBUG)
 
 SLEEP_TIME = 7
 CONFIG_FILE = '/etc/lights.json'
@@ -138,6 +138,14 @@ class Event:
 
   def matchtime(self, tm1):
     """Return True if this event should trigger at the specified datetime"""
+
+    logging.debug("%d:%r - %d:%r - %d:%r - %d:%r - %d:%r",
+                  tm1.minute, self.mins,
+                  tm1.hour, self.hours,
+                  tm1.day, self.days,
+                  tm1.month, self.months,
+                  tm1.weekday(), self.daysofweek)
+
     return (tm1.minute in self.mins and
             tm1.hour in self.hours and
             tm1.day in self.days and
@@ -146,7 +154,9 @@ class Event:
 
   def check(self, tm1):
     """Check and run action if needed"""
+    logging.debug('Event check %r', self)
     if self.matchtime(tm1):
+      logging.debug('Match %r', tm1)
       self.action(**self.kwargs)
 
   def __eq__(self, other):
@@ -169,10 +179,12 @@ class Task(Event):
     self.has_run = False
 
   def check(self, tm1):
+    logging.debug('Task check %r', self)
     if self.has_run:
       logging.debug('%r has already run', self)
       return
     if self.matchtime(tm1):
+      logging.debug('Match %r', tm1)
       self.has_run = True
       self.action(**self.kwargs)
 
@@ -187,11 +199,13 @@ class CronTab:
   def _check(self):
     """Check all events in separate greenlets"""
     tm1 = datetime(*datetime.now().timetuple()[:5])
+    logging.debug('Time %r', tm1)
     for event in self.events:
       gevent.spawn(event.check, tm1)
 
     tm1 += timedelta(minutes=1)
     sec = (tm1 - datetime.now()).seconds + 1
+    logging.debug('Next check in %d', sec)
     gevent.spawn_later(sec, self._check)
 
   def run(self):
@@ -236,7 +250,7 @@ class Lights:
       if port in self._ports:
         log_msg.append("{:02d}".format(port))
         gpio.output(port, gpio.HIGH)
-        time.sleep(sleep)
+        gevent.sleep(sleep)
     logging.info("Ports OFF [%s]", ','.join(log_msg))
 
   def on(self, ports=None, sleep=0):
@@ -247,7 +261,7 @@ class Lights:
       if port in self._ports:
         log_msg.append("{:02d}".format(port))
         gpio.output(port, gpio.LOW)
-        time.sleep(sleep)
+        gevent.sleep(sleep)
     logging.info("Ports ON [%s]", ','.join(log_msg))
 
   def random(self, ports=None, count=25, delay=0.15):
@@ -257,9 +271,9 @@ class Lights:
     for _ in range(count):
       port = random.choice(ports)
       gpio.output(port, gpio.LOW)
-      time.sleep(delay)
+      gevent.sleep(delay)
       gpio.output(port, gpio.HIGH)
-      time.sleep(delay)
+      gevent.sleep(delay)
 
 
 def light_show(lights):
@@ -267,20 +281,20 @@ def light_show(lights):
 
   for _ in range(5):
     lights.on()
-    time.sleep(.2)
+    gevent.sleep(.2)
     lights.off()
-    time.sleep(.4)
+    gevent.sleep(.4)
 
-  time.sleep(0.5)
+  gevent.sleep(0.5)
   lights.random(count=64)
 
   for _ in range(5):
     lights.on()
-    time.sleep(.2)
+    gevent.sleep(.2)
     lights.off()
-    time.sleep(.4)
+    gevent.sleep(.4)
 
-  time.sleep(0.5)
+  gevent.sleep(0.5)
   lights.on()
 
 
