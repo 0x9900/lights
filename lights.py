@@ -243,26 +243,22 @@ class Lights:
       gpio.setup(port, gpio.OUT)
 
   def off(self, ports=None, sleep=0):
-    log_msg = []
     if not ports:
       ports = self._ports
     for port in ports:
       if port in self._ports:
-        log_msg.append("{:02d}".format(port))
         gpio.output(port, gpio.HIGH)
         gevent.sleep(sleep)
-    logging.info("Ports OFF [%s]", ','.join(log_msg))
+    logging.info("%s", self)
 
   def on(self, ports=None, sleep=0):
-    log_msg = []
     if not ports:
       ports = self._ports
     for port in ports:
       if port in self._ports:
-        log_msg.append("{:02d}".format(port))
         gpio.output(port, gpio.LOW)
         gevent.sleep(sleep)
-    logging.info("Ports ON [%s]", ','.join(log_msg))
+    logging.info("%s", self)
 
   def random(self, ports=None, count=25, delay=0.15):
     logging.info('Random - count:%d', count)
@@ -275,9 +271,13 @@ class Lights:
       gpio.output(port, gpio.HIGH)
       gevent.sleep(delay)
 
+  def __str__(self):
+    status = self.status().items()
+    return ', '.join([f"{k:02d}:{v}" for k, v in status])
+
   def status(self, ports=None):
     status = {}
-    st_msg = {0: 'On', 1: 'Off'}
+    st_msg = {0: 'ON', 1: 'Off'}
     if not ports:
       ports = self._ports
     for port in ports:
@@ -305,6 +305,11 @@ def light_show(lights):
 
   gevent.sleep(0.5)
   lights.on()
+
+
+def check_status(lights, ports=None):
+  status = lights.status(ports)
+  logging.info(', '.join([f"{k:02d}:{v}" for k, v in status.items()]))
 
 
 def sig_dump():
@@ -342,27 +347,27 @@ def main():
   config = Config()
   parser = argparse.ArgumentParser(description='Garden lights')
   on_off = parser.add_mutually_exclusive_group(required=True)
-  on_off.add_argument('--off', action="store_true", help='Turn off all the lights')
-  on_off.add_argument('--on', action="store_true", help='Turn on all the lights')
-  on_off.add_argument('--random', type=int, default=25, help='Random sequence')
+  on_off.add_argument('--off', nargs='*', type=int, help='Turn off all the lights')
+  on_off.add_argument('--on', nargs='*', type=int, help='Turn on all the lights')
+  on_off.add_argument('--status', nargs='*', type=int, help='Checkt the status of each port')
+  on_off.add_argument('--random', type=int, help='Random sequence')
   on_off.add_argument('--light-show', action="store_true", help='Light show')
-  on_off.add_argument('--status', action="store_true", help='Checkt the status of each port')
   on_off.add_argument('--cron', action="store_true", help='Automatic mode')
   pargs = parser.parse_args()
   gevent.signal_handler(signal.SIGHUP, sig_dump)
 
   lights = Lights(config.ports)
 
-  if pargs.cron:
-    automation(lights)
-  elif pargs.off:
-    lights.off()
-  elif pargs.on:
-    lights.on()
+  if pargs.on is not None:
+    lights.on(pargs.on)
+  elif pargs.off is not None:
+    lights.off(pargs.off)
+  elif pargs.status is not None:
+    check_status(lights, pargs.status)
   elif pargs.light_show:
     light_show(lights)
-  elif pargs.status:
-    logging.info(lights.status())
+  elif pargs.cron:
+    automation(lights)
   elif pargs.random:
     lights.random(count=pargs.random)
 
