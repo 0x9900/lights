@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 Restart=on-failure
-RestartSec=15s
+RestartSec=60s
 ExecStart=/usr/local/bin/lights --cron
 
 [Install]
