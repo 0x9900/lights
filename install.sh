@@ -24,6 +24,8 @@ echo 'Installing the lights service'
 cp lights.service /lib/systemd/system/lights.service
 
 echo 'Starting the service'
+systemctl stop lights.service
+sleep 1
 systemctl enable lights.service
 systemctl start lights.service
 sleep 2
