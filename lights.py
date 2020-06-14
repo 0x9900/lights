@@ -318,9 +318,6 @@ def add_sunset_task(cron, lights):
 
 def automation(lights):
   global cron
-  config = Config()
-  sun = Sunset(config.local_tz, config.latitude, config.longitude)
-  now = datetime.now(tz=pytz.timezone(config.local_tz))
 
   cron = CronTab(
       Event(light_show, [0, 30], [21, 22], lights=lights), # Light show every hour after sunset
