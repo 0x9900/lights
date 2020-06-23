@@ -23,7 +23,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)s[%(process)d]: %(message)s'
                     datefmt='%H:%M:%S',
                     level=logging.INFO)
 
-SLEEP_TIME = 7
+SLEEP_TIME = 60
 CONFIG_FILE = '/etc/lights.json'
 MANDATORY_FIELDS = {'ports', 'local_tz', 'latitude', 'longitude'}
 
@@ -90,7 +90,7 @@ class Sunset:
                   date=now.strftime('%Y-%m-%d'))
     url = 'https://api.sunrise-sunset.org/json'
     try:
-      resp = requests.get(url=url, params=params)
+      resp = requests.get(url=url, params=params, timeout=(3, 10))
       data = resp.json()
     except Exception as err:
       logging.error(err)
@@ -215,7 +215,7 @@ class CronTab:
       gevent.sleep(SLEEP_TIME)
       garbage = [t for t in self.events if isinstance(t, Task) and t.has_run]
       for tsk in garbage:
-        self.delete(tsk)
+        self.remove(tsk)
 
   def append(self, event):
     logging.info('CronTab add: %r', event)
@@ -224,11 +224,11 @@ class CronTab:
     else:
       logging.warning('CronTab duplicate %r', event)
 
-  def delete(self, event):
+  def remove(self, event):
     try:
       pos = self.events.index(event)
       del self.events[pos]
-      logging.info('CronTab delete: %r', event)
+      logging.info('CronTab remove: %r', event)
     except ValueError:
       logging.warning('CronTab not found %r', event)
 
@@ -242,7 +242,7 @@ class Lights:
     for port in self._ports:
       gpio.setup(port, gpio.OUT)
 
-  def off(self, ports=None, sleep=0):
+  def off(self, ports=None, sleep=0.01):
     if not ports:
       ports = self._ports
     for port in ports:
@@ -251,7 +251,7 @@ class Lights:
         gevent.sleep(sleep)
     logging.info("%s", self)
 
-  def on(self, ports=None, sleep=0):
+  def on(self, ports=None, sleep=0.01):
     if not ports:
       ports = self._ports
     for port in ports:
