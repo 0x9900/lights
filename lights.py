@@ -334,8 +334,8 @@ def automation(lights):
   global cron
 
   cron = CronTab(
-      Event(lights.off, 55, 22), # Turn off the lights at 10:10pm
-      Event(lights.off, 0, 0), # Turn off the lights at midnight no matter what
+      Event(lights.off, 0, 22), # Turn off the lights at 10:10pm
+      Event(lights.off, 0, 0), # Turn off the lights at midnight just in case
   )
   cron.append(Event(add_sunset_task, 0, (2, 8, 14, 20), cron=cron, lights=lights))
   add_sunset_task(cron, lights)
